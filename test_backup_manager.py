@@ -36,7 +36,6 @@ def test_get_instances_info():
 
 
 # Test backup-2: Create snapshot for backup enabled disks
-
 # Case: Creating new snapshot
 def test_create_snapshot():
     data = run(['snapshot'])
@@ -50,6 +49,7 @@ def test_create_snapshot():
     assert 'Status.RUNNING' in data['stdout']
     assert 'Status.DONE' in data['stdout']
     assert 'All' in data['stdout']
+    assert 'Skipping' not in data['stdout']
     assert data['status'] == 0
 
 
@@ -63,6 +63,7 @@ def test_skip_snapshot_creation():
         data = run(['snapshot', '--cheat_skip'])
 
     assert 'Skipping' in data['stdout']
+    assert 'Status.RUNNING' not in data['stdout']
     assert data['status'] == 0
 
 
@@ -95,6 +96,7 @@ def test_apply_retention_policy_non_remove():
     assert data['status'] == 0
 
 
+# Test error message and status
 def test_option_error():
     data = run(['hi'])
     assert "'hi' option not available" in data['stderr']

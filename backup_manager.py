@@ -14,7 +14,7 @@ class BackupManager():
        create new snapshots for backup enabled disks,
        apply retention policy to manage backups.
     """
-    def __init__(self, compute) -> None:
+    def __init__(self, compute):
         """Initialize the BackupManager
         """
         self.compute = compute
@@ -81,6 +81,7 @@ class BackupManager():
             str: A string for date
             str: A string for time
         """
+        # '\d' matches unicode decimal digit [0 - 9]
         date_time = re.compile(r'(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2}.\d{3})').match(time_str)
         date = date_time.group(1)
         time = date_time.group(2)
@@ -120,6 +121,10 @@ class BackupManager():
         """
         zone_op = self.compute.zoneOperations().get(project=self.project, zone=self.zone,
                                                     operation=snapshot['name']).execute()
+        # This will return the error if the zone_op run into error
+        # For example, createSnapshot parse in string instead of dictionary for 'body'
+        if 'error' in zone_op:
+            raise Exception(zone_op['error'])
         self.log.info(f'Snapshot for disk {instance["name"]} is Status.{zone_op["status"]}')
         return zone_op['status']
 
@@ -162,8 +167,8 @@ class BackupManager():
                 # Covert date string to datetime object
                 last_backup_date = datetime.strptime(date_str, '%Y-%m-%d').date()
 
-                # If the last backup is created today, skip creating new snapshot
-                # If cheat is True, will continue to create a new snapshot
+                # If the last backup is created today, or if cheat_skip is true, skip creating new snapshot
+                # If cheat_create is True, will continue to create a new snapshot
                 if (last_backup_date == datetime.today().date() or cheat_skip) and not cheat_create:
                     self.log.info('Skipping backup creation since the last backup is too recent')
                 # If no backup has been made today, continue to create new snapshot
@@ -177,7 +182,7 @@ class BackupManager():
             await self.task
             self.log.info('All snapshots done')
 
-        # Close the handles of the logger at the end of the execution
+        # Close the handlers of the logger at the end of the execution
         self.cleanup_log_handler()
 
     def construct_disks_snapshots_dict(self):
@@ -188,9 +193,11 @@ class BackupManager():
             {
                 "<sourceDiskId>"{  # A dict of snapshots created for this disk id
                     "<snapshot creation date>": [  # A list of snapshots created on this date
-                        "name" : "<snapshot name>",
-                        "id": "<snapshot id>",
-                        "time": "<snapshot creation timestamp>"
+                        {
+                            "name" : "<snapshot name>",
+                            "id": "<snapshot id>",
+                            "time": "<snapshot creation timestamp>"
+                        }
                     ]
                 }
             }
@@ -223,7 +230,9 @@ class BackupManager():
         # If the backup's timestamp is prior to the last backup timestamp, delete the backup
         for backup in backups:
             if backup['time'] < last_backup_time:
-                self.compute.snapshots().delete(project=self.project, snapshot=backup['name']).execute()
+                delete = self.compute.snapshots().delete(project=self.project, snapshot=backup['name']).execute()
+                if 'error' in delete:
+                    raise Exception(delete['error'])
                 self.log.info(f'Deleting snapshot {backup["id"]}')
 
     def apply_retention_policy(self):
@@ -328,7 +337,8 @@ def main(sys_args):
         elif args.option == 'apply-retention-policy':
             backup.apply_retention_policy()
         else:
-            raise Exception(f"'{args.option}' option not available, please select from 'instances', 'snapshot', 'apply-retention-policy'")
+            raise Exception(
+                f"'{args.option}' option not available, please select from 'instances', 'snapshot', 'apply-retention-policy'")
     except KeyboardInterrupt:
         sys.exit(0)
 
